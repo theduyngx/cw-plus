@@ -79,6 +79,8 @@ pub struct MinterResponse {
     pub cap: Option<Uint128>,
 }
 
+
+/// This is related to the market in which the token is used
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
 pub struct MarketingInfoResponse {
     /// A URL pointing to the project behind this token.

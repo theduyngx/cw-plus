@@ -91,20 +91,22 @@ fn verify_logo(logo: &Logo) -> Result<(), ContractError> {
     }
 }
 
+
 /// @viewer This is the same as the contract's constructor in Solidity
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    mut deps: DepsMut,      // mutable dependencies
-    _env: Env,              // environment variable struct
-    _info: MessageInfo,
-    msg: InstantiateMsg,
+    mut deps: DepsMut,      // mutable dependencies - for mutating state (storage)
+    _env: Env,              // environment variable (block info)
+    _info: MessageInfo,     // message info (sender, amount/funds)
+    msg: InstantiateMsg,    // instantiate message -> name, symbol, decimals, etc.
 ) -> Result<Response, ContractError> {
+    
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     // check valid token info
     msg.validate()?;
     // create accounts
     // a bit confusing for now but simply think of it as allowing a specific amount to be
-    // transferred to the account (wallet) with address specified in initial_balances
+    // transferred to the account with address specified in initial_balances
     let total_supply = create_accounts(&mut deps, &msg.initial_balances)?;
 
     // check if initial supply exceeds cap
@@ -114,8 +116,16 @@ pub fn instantiate(
         }
     }
 
-    // minting (?)
+    // MINTING
+    // what they did here was checking the Minter Response to therefore create some Minter Data with the
+    // minter address
+    // API will validate said address (NOTE: all validations stop at checking if the format is correct)
+    // then it will transfer the cap to minter (number of tokens to minter)
     let mint = match msg.mint {
+        // Minter Response:
+        // It has a minter address field that will be validated by the deps API
+        // And a hard cap that is amount of tokens can be transferred given the current
+        // total cap
         Some(m) => Some(MinterData {
             minter: deps.api.addr_validate(&m.minter)?,
             cap: m.cap,
@@ -123,7 +133,10 @@ pub fn instantiate(
         None => None,
     };
 
-    // store token info
+    // create token info
+    // more specifically, it will create the data of the token to be stored on the storage
+    // this is an important part of smart contract - for things such as instantiate which
+    // requires a change of state to the storage (hence DepsMut)
     let data = TokenInfo {
         name: msg.name,
         symbol: msg.symbol,
@@ -131,9 +144,12 @@ pub fn instantiate(
         total_supply,
         mint,
     };
+    // store token info
     TOKEN_INFO.save(deps.storage, &data)?;
 
+    // marketing info is related to the information of the market in which the token is used
     if let Some(marketing) = msg.marketing {
+        // check whether the market logo is valid
         let logo = if let Some(logo) = marketing.logo {
             verify_logo(&logo)?;
             LOGO.save(deps.storage, &logo)?;
@@ -146,6 +162,9 @@ pub fn instantiate(
             None
         };
 
+        // this is the marketing response to the instantiate marketing info
+        // specifically, it will assign the project and description, and more importantly, it
+        // will use the deps API to validate the address
         let data = MarketingInfoResponse {
             project: marketing.project,
             description: marketing.description,
@@ -161,6 +180,7 @@ pub fn instantiate(
     Ok(Response::default())
 }
 
+
 /// @viewer Each Cw20 is assigned to an account: String, so we'll create it or assign a certain
 /// amount of coins with specified constraints (not sure why though)
 pub fn create_accounts(
@@ -175,7 +195,7 @@ pub fn create_accounts(
         BALANCES.save(deps.storage, &address, &row.amount)?;
         total_supply += row.amount;
     }
-
+    // return the total supply of the validated wallet (account)
     Ok(total_supply)
 }
 
@@ -192,76 +212,111 @@ pub fn validate_accounts(accounts: &[Cw20Coin]) -> Result<(), ContractError> {
     }
 }
 
+
 /// @viewer Execute action -> execute message
-/// Execute includes all the functions seen in ERC-20:
+/// Execute includes all the functions seen in ERC-20
+/// Its signature is similar to Instantiate (because after all, both of them are messages)
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    msg: ExecuteMsg,
+    deps : DepsMut,
+    env  : Env,
+    info : MessageInfo,
+    msg  : ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    // each of the execute will have its own Response which will be returned with the match
+    // we can also see each of these messages (depending on the ExecuteMsg type) will have a
+    // different signature: we will use the fields of these message types to pass to the execute
+    // corresponding message functions
     match msg {
         // transfer
-        ExecuteMsg::Transfer { recipient, amount } => {
-            execute_transfer(deps, env, info, recipient, amount)
-        }
+        ExecuteMsg::Transfer {
+            recipient,
+            amount
+        } => execute_transfer(deps, env, info, recipient, amount),
+
         // burn
-        ExecuteMsg::Burn { amount } => execute_burn(deps, env, info, amount),
+        ExecuteMsg::Burn {
+            amount
+        } => execute_burn(deps, env, info, amount),
+
         // send
         ExecuteMsg::Send {
             contract,
             amount,
             msg,
         } => execute_send(deps, env, info, contract, amount, msg),
-        // mint -> rewarding (?)
-        ExecuteMsg::Mint { recipient, amount } => execute_mint(deps, env, info, recipient, amount),
+
+        // mint -> rewarding
+        ExecuteMsg::Mint { 
+            recipient, 
+            amount 
+        } => execute_mint(deps, env, info, recipient, amount),
+
+        // allowance related - the total amount that another user can spend on yours
         ExecuteMsg::IncreaseAllowance {
             spender,
             amount,
             expires,
         } => execute_increase_allowance(deps, env, info, spender, amount, expires),
+
         ExecuteMsg::DecreaseAllowance {
             spender,
             amount,
             expires,
         } => execute_decrease_allowance(deps, env, info, spender, amount, expires),
-        // transfer from (still not sure what this is)
+
+        // transfer from
         ExecuteMsg::TransferFrom {
             owner,
             recipient,
             amount,
         } => execute_transfer_from(deps, env, info, owner, recipient, amount),
-        ExecuteMsg::BurnFrom { owner, amount } => execute_burn_from(deps, env, info, owner, amount),
+
+        ExecuteMsg::BurnFrom { 
+            owner,
+            amount
+        } => execute_burn_from(deps, env, info, owner, amount),
+
+        // send from
         ExecuteMsg::SendFrom {
             owner,
             contract,
             amount,
             msg,
         } => execute_send_from(deps, env, info, owner, contract, amount, msg),
+
         // also what is marketing??
         ExecuteMsg::UpdateMarketing {
             project,
             description,
             marketing,
         } => execute_update_marketing(deps, env, info, project, description, marketing),
-        ExecuteMsg::UploadLogo(logo) => execute_upload_logo(deps, env, info, logo),
-        ExecuteMsg::UpdateMinter { new_minter } => {
-            execute_update_minter(deps, env, info, new_minter)
-        }
+
+        ExecuteMsg::UploadLogo(
+            logo
+        ) => execute_upload_logo(deps, env, info, logo),
+
+        ExecuteMsg::UpdateMinter { 
+            new_minter 
+        } => execute_update_minter(deps, env, info, new_minter)
     }
 }
 
+
 /// @viewer Execute transfer message
 pub fn execute_transfer(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    recipient: String,
-    amount: Uint128,
+    deps      : DepsMut,      // apply mutation onto state (storage, specifically wallets' balances)
+    _env      : Env,          // environment variables (block, transaction info)
+    info      : MessageInfo,  // message info (sender, denom)
+    recipient : String,       // receiver's address
+    amount    : Uint128,      // amount
 ) -> Result<Response, ContractError> {
+
+    // validating to obtain receipent address
     let rcpt_addr = deps.api.addr_validate(&recipient)?;
 
+    // updating global state variable BALANCE
+    // sender
     BALANCES.update(
         deps.storage,
         &info.sender,
@@ -269,10 +324,13 @@ pub fn execute_transfer(
             Ok(balance.unwrap_or_default().checked_sub(amount)?)
         },
     )?;
+    // receipent
     BALANCES.update(
         deps.storage,
         &rcpt_addr,
-        |balance: Option<Uint128>| -> StdResult<_> { Ok(balance.unwrap_or_default() + amount) },
+        |balance: Option<Uint128>| -> StdResult<_> {
+            Ok(balance.unwrap_or_default() + amount)
+        },
     )?;
 
     let res = Response::new()
@@ -283,12 +341,13 @@ pub fn execute_transfer(
     Ok(res)
 }
 
+
 /// @viewer Execute burn message
 pub fn execute_burn(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    amount: Uint128,
+    deps   : DepsMut,
+    _env   : Env,
+    info   : MessageInfo,  // account with burned tokens here
+    amount : Uint128,
 ) -> Result<Response, ContractError> {
     // lower balance -> the coins that get burnt will not be circulated anywhere
     BALANCES.update(
@@ -299,10 +358,16 @@ pub fn execute_burn(
         },
     )?;
     // reduce total_supply
-    TOKEN_INFO.update(deps.storage, |mut info| -> StdResult<_> {
-        info.total_supply = info.total_supply.checked_sub(amount)?;
-        Ok(info)
-    })?;
+    TOKEN_INFO.update(
+        // updating the state (storage with account's total supply)
+        deps.storage,
+        // action is performing subtraction on Uint128
+        |mut info| -> StdResult<_> {
+            // checked_sub will return None upon integer underflow
+            info.total_supply = info.total_supply.checked_sub(amount)?;
+            Ok(info)
+        }
+    )?;
 
     let res = Response::new()
         .add_attribute("action", "burn")
@@ -311,6 +376,8 @@ pub fn execute_burn(
     Ok(res)
 }
 
+
+/// @viewer Execute mint message
 pub fn execute_mint(
     deps: DepsMut,
     _env: Env,
@@ -318,15 +385,17 @@ pub fn execute_mint(
     recipient: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+
+    // 
     let mut config = TOKEN_INFO
         .may_load(deps.storage)?
         .ok_or(ContractError::Unauthorized {})?;
 
     if config
-        .mint
-        .as_ref()
-        .ok_or(ContractError::Unauthorized {})?
-        .minter
+            .mint
+            .as_ref()
+            .ok_or(ContractError::Unauthorized {})?
+            .minter
         != info.sender
     {
         return Err(ContractError::Unauthorized {});
@@ -356,6 +425,8 @@ pub fn execute_mint(
     Ok(res)
 }
 
+
+/// @viewer Execute send message
 pub fn execute_send(
     deps: DepsMut,
     _env: Env,
@@ -396,6 +467,7 @@ pub fn execute_send(
     Ok(res)
 }
 
+
 pub fn execute_update_minter(
     deps: DepsMut,
     _env: Env,
@@ -434,6 +506,7 @@ pub fn execute_update_minter(
         ))
 }
 
+
 pub fn execute_update_marketing(
     deps: DepsMut,
     _env: Env,
@@ -447,9 +520,9 @@ pub fn execute_update_marketing(
         .ok_or(ContractError::Unauthorized {})?;
 
     if marketing_info
-        .marketing
-        .as_ref()
-        .ok_or(ContractError::Unauthorized {})?
+            .marketing
+            .as_ref()
+            .ok_or(ContractError::Unauthorized {})?
         != &info.sender
     {
         return Err(ContractError::Unauthorized {});
@@ -479,13 +552,15 @@ pub fn execute_update_marketing(
         && marketing_info.logo.is_none()
     {
         MARKETING_INFO.remove(deps.storage);
-    } else {
+    }
+    else {
         MARKETING_INFO.save(deps.storage, &marketing_info)?;
     }
 
     let res = Response::new().add_attribute("action", "update_marketing");
     Ok(res)
 }
+
 
 pub fn execute_upload_logo(
     deps: DepsMut,
@@ -500,9 +575,9 @@ pub fn execute_upload_logo(
     verify_logo(&logo)?;
 
     if marketing_info
-        .marketing
-        .as_ref()
-        .ok_or(ContractError::Unauthorized {})?
+            .marketing
+            .as_ref()
+            .ok_or(ContractError::Unauthorized {})?
         != &info.sender
     {
         return Err(ContractError::Unauthorized {});
@@ -522,20 +597,36 @@ pub fn execute_upload_logo(
     Ok(res)
 }
 
+
+/// @viewer querying the storage (using Deps, not DepsMut, as a result)
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(
+    deps: Deps,
+    _env: Env,
+    msg: QueryMsg
+) -> StdResult<Binary> {
     match msg {
-        QueryMsg::Balance { address } => to_binary(&query_balance(deps, address)?),
-        QueryMsg::TokenInfo {} => to_binary(&query_token_info(deps)?),
-        QueryMsg::Minter {} => to_binary(&query_minter(deps)?),
-        QueryMsg::Allowance { owner, spender } => {
-            to_binary(&query_allowance(deps, owner, spender)?)
-        }
+        QueryMsg::Balance { 
+            address 
+        } => to_binary(&query_balance(deps, address)?),
+
+        QueryMsg::TokenInfo {
+        } => to_binary(&query_token_info(deps)?),
+
+        QueryMsg::Minter {
+        } => to_binary(&query_minter(deps)?),
+
+        QueryMsg::Allowance { 
+            owner, 
+            spender 
+        } => to_binary(&query_allowance(deps, owner, spender)?),
+
         QueryMsg::AllAllowances {
             owner,
             start_after,
             limit,
         } => to_binary(&query_owner_allowances(deps, owner, start_after, limit)?),
+
         QueryMsg::AllSpenderAllowances {
             spender,
             start_after,
@@ -546,13 +637,20 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_after,
             limit,
         )?),
-        QueryMsg::AllAccounts { start_after, limit } => {
-            to_binary(&query_all_accounts(deps, start_after, limit)?)
-        }
-        QueryMsg::MarketingInfo {} => to_binary(&query_marketing_info(deps)?),
-        QueryMsg::DownloadLogo {} => to_binary(&query_download_logo(deps)?),
+
+        QueryMsg::AllAccounts { 
+            start_after, 
+            limit 
+        } => to_binary(&query_all_accounts(deps, start_after, limit)?),
+
+        QueryMsg::MarketingInfo {
+        } => to_binary(&query_marketing_info(deps)?),
+        
+        QueryMsg::DownloadLogo {
+        } => to_binary(&query_download_logo(deps)?),
     }
 }
+
 
 pub fn query_balance(deps: Deps, address: String) -> StdResult<BalanceResponse> {
     let address = deps.api.addr_validate(&address)?;

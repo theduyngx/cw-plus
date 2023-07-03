@@ -7,6 +7,8 @@ use cw20::{AllowanceResponse, Cw20ReceiveMsg, Expiration};
 use crate::error::ContractError;
 use crate::state::{ALLOWANCES, ALLOWANCES_SPENDER, BALANCES, TOKEN_INFO};
 
+
+/// @viewer increases the amount of tokens that a specific another can spend on yours
 pub fn execute_increase_allowance(
     deps: DepsMut,
     env: Env,
@@ -43,6 +45,8 @@ pub fn execute_increase_allowance(
     Ok(res)
 }
 
+
+/// @viewer decreases the amount of tokens that a specific another can spend on yours
 pub fn execute_decrease_allowance(
     deps: DepsMut,
     env: Env,
@@ -92,7 +96,8 @@ pub fn execute_decrease_allowance(
     Ok(res)
 }
 
-// this can be used to update a lower allowance - call bucket.update with proper keys
+
+// helper function used to update a lower allowance - call bucket.update with proper keys
 pub fn deduct_allowance(
     storage: &mut dyn Storage,
     owner: &Addr,
@@ -121,6 +126,10 @@ pub fn deduct_allowance(
     ALLOWANCES_SPENDER.update(storage, (spender, owner), update_fn)
 }
 
+
+/// @viewer transfer from means to have another wallet transferred your tokens
+/// It uses what's called Allowance, which is the total amount of tokens for a specific
+/// other wallet to be able to spend on yours
 pub fn execute_transfer_from(
     deps: DepsMut,
     env: Env,
@@ -158,6 +167,8 @@ pub fn execute_transfer_from(
     Ok(res)
 }
 
+
+/// @viewer let others burn your token (?)
 pub fn execute_burn_from(
     deps: DepsMut,
 
@@ -194,6 +205,11 @@ pub fn execute_burn_from(
     Ok(res)
 }
 
+
+/// @viewer a bit similar to transfer_from; main difference is that it allows another smart contract
+/// to send your tokens rather than another wallet
+/// This allows smart contracts to interact better with each other, because with send_from, contract
+/// can execute further instructions if required
 pub fn execute_send_from(
     deps: DepsMut,
     env: Env,
@@ -231,7 +247,8 @@ pub fn execute_send_from(
         attr("amount", amount),
     ];
 
-    // create a send message
+    // here's the difference with transfer_from: create a send message
+    // it will create this message for further instructions
     let msg = Cw20ReceiveMsg {
         sender: info.sender.into(),
         amount,
@@ -242,6 +259,7 @@ pub fn execute_send_from(
     let res = Response::new().add_message(msg).add_attributes(attrs);
     Ok(res)
 }
+
 
 pub fn query_allowance(deps: Deps, owner: String, spender: String) -> StdResult<AllowanceResponse> {
     let owner_addr = deps.api.addr_validate(&owner)?;

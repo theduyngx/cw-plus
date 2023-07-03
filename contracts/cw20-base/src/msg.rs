@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 pub use cw20::Cw20ExecuteMsg as ExecuteMsg;
 
+/// Instantiate Marketing Info upon instantiating token
+/// This is related to the market in which the token is used
 #[cw_serde]
 pub struct InstantiateMarketingInfo {
     pub project: Option<String>,
@@ -14,6 +16,8 @@ pub struct InstantiateMarketingInfo {
     pub logo: Option<Logo>,
 }
 
+/// Instantiate Message to instantiate token
+/// As such, it requires fields such as token's name, symbol, decimals, etc.
 #[cw_serde]
 #[cfg_attr(test, derive(Default))]
 pub struct InstantiateMsg {
