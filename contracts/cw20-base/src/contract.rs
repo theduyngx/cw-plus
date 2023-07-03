@@ -36,7 +36,7 @@ fn verify_xml_preamble(data: &[u8]) -> Result<(), ContractError> {
     // compilation is heavy and probably not worth it.
 
     let preamble = data
-        .split_inclusive(|c| *c == b'>')
+        .split_inclusive(|c| *c == b'>')  // deferenced byte is '>'
         .next()
         .ok_or(ContractError::InvalidXmlPreamble {})?;
 
@@ -50,7 +50,7 @@ fn verify_xml_preamble(data: &[u8]) -> Result<(), ContractError> {
     }
 
     // Additionally attributes format could be validated as they are well defined, as well as
-    // comments presence inside of preable, but it is probably not worth it.
+    // comments presence inside of preamble, but it is probably not worth it.
 }
 
 /// Validates XML logo
@@ -91,25 +91,30 @@ fn verify_logo(logo: &Logo) -> Result<(), ContractError> {
     }
 }
 
+/// @viewer This is the same as the contract's constructor in Solidity
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    mut deps: DepsMut,
-    _env: Env,
+    mut deps: DepsMut,      // mutable dependencies
+    _env: Env,              // environment variable struct
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     // check valid token info
     msg.validate()?;
-    // create initial accounts
+    // create accounts
+    // a bit confusing for now but simply think of it as allowing a specific amount to be
+    // transferred to the account (wallet) with address specified in initial_balances
     let total_supply = create_accounts(&mut deps, &msg.initial_balances)?;
 
+    // check if initial supply exceeds cap
     if let Some(limit) = msg.get_cap() {
         if total_supply > limit {
             return Err(StdError::generic_err("Initial supply greater than cap").into());
         }
     }
 
+    // minting (?)
     let mint = match msg.mint {
         Some(m) => Some(MinterData {
             minter: deps.api.addr_validate(&m.minter)?,
@@ -156,6 +161,8 @@ pub fn instantiate(
     Ok(Response::default())
 }
 
+/// @viewer Each Cw20 is assigned to an account: String, so we'll create it or assign a certain
+/// amount of coins with specified constraints (not sure why though)
 pub fn create_accounts(
     deps: &mut DepsMut,
     accounts: &[Cw20Coin],
@@ -172,6 +179,7 @@ pub fn create_accounts(
     Ok(total_supply)
 }
 
+/// @viewer Validating accounts
 pub fn validate_accounts(accounts: &[Cw20Coin]) -> Result<(), ContractError> {
     let mut addresses = accounts.iter().map(|c| &c.address).collect::<Vec<_>>();
     addresses.sort();
@@ -184,6 +192,8 @@ pub fn validate_accounts(accounts: &[Cw20Coin]) -> Result<(), ContractError> {
     }
 }
 
+/// @viewer Execute action -> execute message
+/// Execute includes all the functions seen in ERC-20:
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
@@ -192,15 +202,19 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
+        // transfer
         ExecuteMsg::Transfer { recipient, amount } => {
             execute_transfer(deps, env, info, recipient, amount)
         }
+        // burn
         ExecuteMsg::Burn { amount } => execute_burn(deps, env, info, amount),
+        // send
         ExecuteMsg::Send {
             contract,
             amount,
             msg,
         } => execute_send(deps, env, info, contract, amount, msg),
+        // mint -> rewarding (?)
         ExecuteMsg::Mint { recipient, amount } => execute_mint(deps, env, info, recipient, amount),
         ExecuteMsg::IncreaseAllowance {
             spender,
@@ -212,6 +226,7 @@ pub fn execute(
             amount,
             expires,
         } => execute_decrease_allowance(deps, env, info, spender, amount, expires),
+        // transfer from (still not sure what this is)
         ExecuteMsg::TransferFrom {
             owner,
             recipient,
@@ -224,6 +239,7 @@ pub fn execute(
             amount,
             msg,
         } => execute_send_from(deps, env, info, owner, contract, amount, msg),
+        // also what is marketing??
         ExecuteMsg::UpdateMarketing {
             project,
             description,
@@ -236,6 +252,7 @@ pub fn execute(
     }
 }
 
+/// @viewer Execute transfer message
 pub fn execute_transfer(
     deps: DepsMut,
     _env: Env,
@@ -266,13 +283,14 @@ pub fn execute_transfer(
     Ok(res)
 }
 
+/// @viewer Execute burn message
 pub fn execute_burn(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    // lower balance
+    // lower balance -> the coins that get burnt will not be circulated anywhere
     BALANCES.update(
         deps.storage,
         &info.sender,
@@ -602,6 +620,9 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
     }
     Ok(Response::default())
 }
+
+
+/// ------------------------------- TESTS ------------------------------- ///
 
 #[cfg(test)]
 mod tests {
