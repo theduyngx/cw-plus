@@ -56,12 +56,10 @@ fn verify_xml_preamble(data: &[u8]) -> Result<(), ContractError> {
 /// Validates XML logo
 fn verify_xml_logo(logo: &[u8]) -> Result<(), ContractError> {
     verify_xml_preamble(logo)?;
-
-    if logo.len() > LOGO_SIZE_CAP {
-        Err(ContractError::LogoTooBig {})
-    } else {
-        Ok(())
-    }
+    if logo.len() > LOGO_SIZE_CAP
+        { Err(ContractError::LogoTooBig {}) }
+    else
+        { Ok(()) }
 }
 
 /// Validates png logo
@@ -195,21 +193,24 @@ pub fn create_accounts(
         BALANCES.save(deps.storage, &address, &row.amount)?;
         total_supply += row.amount;
     }
-    // return the total supply of the validated wallet (account)
     Ok(total_supply)
 }
 
 /// @viewer Validating accounts
+/// This will not actually check whether accounts do exist or not, but simply validating
+/// that the accounts format is correct
 pub fn validate_accounts(accounts: &[Cw20Coin]) -> Result<(), ContractError> {
-    let mut addresses = accounts.iter().map(|c| &c.address).collect::<Vec<_>>();
+    let mut addresses = accounts
+        .iter()
+        .map(|c| &c.address)
+        .collect::<Vec<_>>();
     addresses.sort();
     addresses.dedup();
 
-    if addresses.len() != accounts.len() {
-        Err(ContractError::DuplicateInitialBalanceAddresses {})
-    } else {
-        Ok(())
-    }
+    if addresses.len() != accounts.len()
+        { Err(ContractError::DuplicateInitialBalanceAddresses {}) }
+    else
+        { Ok(()) }
 }
 
 
@@ -386,7 +387,9 @@ pub fn execute_mint(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
 
-    // 
+    // token info includes all the primitives of ERC-20
+    // we're trying to load it from storage by parsing the key from TOKEN INFO constant
+    // ????
     let mut config = TOKEN_INFO
         .may_load(deps.storage)?
         .ok_or(ContractError::Unauthorized {})?;
@@ -412,28 +415,31 @@ pub fn execute_mint(
 
     // add amount to recipient balance
     let rcpt_addr = deps.api.addr_validate(&recipient)?;
+    
     BALANCES.update(
         deps.storage,
         &rcpt_addr,
-        |balance: Option<Uint128>| -> StdResult<_> { Ok(balance.unwrap_or_default() + amount) },
+        |balance: Option<Uint128>| -> StdResult<_> {
+            Ok(balance.unwrap_or_default() + amount)
+        },
     )?;
 
     let res = Response::new()
-        .add_attribute("action", "mint")
-        .add_attribute("to", recipient)
-        .add_attribute("amount", amount);
+        .add_attribute("action", "mint"   )
+        .add_attribute("to"    , recipient)
+        .add_attribute("amount", amount   );
     Ok(res)
 }
 
 
 /// @viewer Execute send message
 pub fn execute_send(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    contract: String,
-    amount: Uint128,
-    msg: Binary,
+    deps     : DepsMut,
+    _env     : Env,
+    info     : MessageInfo,
+    contract : String,
+    amount   : Uint128,
+    msg      : Binary,
 ) -> Result<Response, ContractError> {
     let rcpt_addr = deps.api.addr_validate(&contract)?;
 
@@ -448,7 +454,9 @@ pub fn execute_send(
     BALANCES.update(
         deps.storage,
         &rcpt_addr,
-        |balance: Option<Uint128>| -> StdResult<_> { Ok(balance.unwrap_or_default() + amount) },
+        |balance: Option<Uint128>| -> StdResult<_> {
+            Ok(balance.unwrap_or_default() + amount)
+        },
     )?;
 
     let res = Response::new()
@@ -599,34 +607,44 @@ pub fn execute_upload_logo(
 
 
 /// @viewer querying the storage (using Deps, not DepsMut, as a result)
+/// It seems like the function wants Binary for cheap, efficient data transmission, or communication,
+/// between smart contracts and whatnot (not sure at all, though)
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(
     deps: Deps,
     _env: Env,
     msg: QueryMsg
 ) -> StdResult<Binary> {
+    // querying uses Serde's serialization (serializing a complex data structure, and whatnot) into
+    // serializable sequence of bytes for efficient transmission
     match msg {
+        // querying an address' balance
         QueryMsg::Balance { 
             address 
         } => to_binary(&query_balance(deps, address)?),
 
+        // getting the token's info
         QueryMsg::TokenInfo {
         } => to_binary(&query_token_info(deps)?),
 
+        // query minter's info (???)
         QueryMsg::Minter {
         } => to_binary(&query_minter(deps)?),
 
+        // querying allowance of a specified owner wrt a specified spender
         QueryMsg::Allowance { 
             owner, 
             spender 
         } => to_binary(&query_allowance(deps, owner, spender)?),
 
+        // querying all allowances of a specified owner
         QueryMsg::AllAllowances {
             owner,
             start_after,
             limit,
         } => to_binary(&query_owner_allowances(deps, owner, start_after, limit)?),
 
+        // querying a spender's all allowances
         QueryMsg::AllSpenderAllowances {
             spender,
             start_after,
@@ -638,6 +656,7 @@ pub fn query(
             limit,
         )?),
 
+        // querying all accounts (???)
         QueryMsg::AllAccounts { 
             start_after, 
             limit 
@@ -737,12 +756,13 @@ mod tests {
     }
 
     // this will set up the instantiation for other tests
+    // it will still call _do_instantiate with specified minter
     fn do_instantiate_with_minter(
-        deps: DepsMut,
-        addr: &str,
-        amount: Uint128,
-        minter: &str,
-        cap: Option<Uint128>,
+        deps   : DepsMut,
+        addr   : &str,
+        amount : Uint128,
+        minter : &str,
+        cap    : Option<Uint128>,
     ) -> TokenInfoResponse {
         _do_instantiate(
             deps,
@@ -762,28 +782,42 @@ mod tests {
 
     // this will set up the instantiation for other tests
     fn _do_instantiate(
-        mut deps: DepsMut,
-        addr: &str,
-        amount: Uint128,
-        mint: Option<MinterResponse>,
+        mut deps : DepsMut,
+        addr     : &str,
+        amount   : Uint128,
+        mint     : Option<MinterResponse>,
     ) -> TokenInfoResponse {
+
+        // specify an insantiate message (token is Auto Gen)
         let instantiate_msg = InstantiateMsg {
             name: "Auto Gen".to_string(),
             symbol: "AUTO".to_string(),
             decimals: 3,
-            initial_balances: vec![Cw20Coin {
-                address: addr.to_string(),
-                amount,
-            }],
+            // initial balance is instantiated with a single Cw20 coin to the
+            // specified address with the specified amount (in fn parameters)
+            initial_balances: vec![
+                Cw20Coin {
+                    address: addr.to_string(),
+                    amount,
+                }
+            ],
+            // cloning minter response instead of referencing (?)
+            // probably because in fear of early drop outside of calling the fn
             mint: mint.clone(),
             marketing: None,
         };
+        // mock initializations
         let info = mock_info("creator", &[]);
         let env = mock_env();
+
+        // then we instantiate the token and get the Response res
         let res = instantiate(deps.branch(), env, info, instantiate_msg).unwrap();
+        // assert the response
         assert_eq!(0, res.messages.len());
 
+        // here, we query the token info
         let meta = query_token_info(deps.as_ref()).unwrap();
+        // and assert that they're equal
         assert_eq!(
             meta,
             TokenInfoResponse {
@@ -793,36 +827,48 @@ mod tests {
                 total_supply: amount,
             }
         );
+        // we also assert that the address' balance is equal to the specified amount
         assert_eq!(get_balance(deps.as_ref(), addr), amount);
+        // and assert minter matches the mint
         assert_eq!(query_minter(deps.as_ref()).unwrap(), mint,);
         meta
     }
 
     const PNG_HEADER: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
+    /// INSTANTIATE MODULE
     mod instantiate {
         use super::*;
 
+        // basic - asserting exactly like _do_instantiate
         #[test]
         fn basic() {
+            // first get a mock dependency
             let mut deps = mock_dependencies();
+            // then specify an amount in Uint128
             let amount = Uint128::from(11223344u128);
+            // and an instantiate message
             let instantiate_msg = InstantiateMsg {
                 name: "Cash Token".to_string(),
                 symbol: "CASH".to_string(),
                 decimals: 9,
-                initial_balances: vec![Cw20Coin {
-                    address: String::from("addr0000"),
-                    amount,
-                }],
+                // though this time, we specify address 0
+                initial_balances: vec![
+                    Cw20Coin {
+                        address: String::from("addr0000"),
+                        amount,
+                    }
+                ],
                 mint: None,
                 marketing: None,
             };
-            let info = mock_info("creator", &[]);
-            let env = mock_env();
-            let res = instantiate(deps.as_mut(), env, info, instantiate_msg).unwrap();
+            // other mock and final instantiation to get Response res
+            let info: MessageInfo = mock_info("creator", &[]);
+            let env : Env         = mock_env();
+            let res : Response    = instantiate(deps.as_mut(), env, info, instantiate_msg).unwrap();
             assert_eq!(0, res.messages.len());
 
+            // basic - asserting that queried token info = specified info
             assert_eq!(
                 query_token_info(deps.as_ref()).unwrap(),
                 TokenInfoResponse {
@@ -832,18 +878,24 @@ mod tests {
                     total_supply: amount,
                 }
             );
+            // basic - asserting queried address 0 balance = specified balance
             assert_eq!(
                 get_balance(deps.as_ref(), "addr0000"),
                 Uint128::new(11223344)
             );
         }
 
+        // mintable - test case with specified minting constraints, in which case tokens
+        // can be minted due to under limit
         #[test]
         fn mintable() {
+            // initialize deps, amount, minter, and limit
             let mut deps = mock_dependencies();
             let amount = Uint128::new(11223344);
             let minter = String::from("asmodat");
             let limit = Uint128::new(511223344);
+
+            // instantiate message
             let instantiate_msg = InstantiateMsg {
                 name: "Cash Token".to_string(),
                 symbol: "CASH".to_string(),
@@ -852,6 +904,7 @@ mod tests {
                     address: "addr0000".into(),
                     amount,
                 }],
+                // minter response with cap / limit
                 mint: Some(MinterResponse {
                     minter: minter.clone(),
                     cap: Some(limit),
@@ -863,6 +916,7 @@ mod tests {
             let res = instantiate(deps.as_mut(), env, info, instantiate_msg).unwrap();
             assert_eq!(0, res.messages.len());
 
+            // assert that queried token info matches
             assert_eq!(
                 query_token_info(deps.as_ref()).unwrap(),
                 TokenInfoResponse {
@@ -872,10 +926,12 @@ mod tests {
                     total_supply: amount,
                 }
             );
+            // assert balance of address
             assert_eq!(
                 get_balance(deps.as_ref(), "addr0000"),
                 Uint128::new(11223344)
             );
+            // and finally, assert minter's information is correct
             assert_eq!(
                 query_minter(deps.as_ref()).unwrap(),
                 Some(MinterResponse {
@@ -885,6 +941,7 @@ mod tests {
             );
         }
 
+        // not mintable - due to amount exceeding cap
         #[test]
         fn mintable_over_cap() {
             let mut deps = mock_dependencies();
@@ -908,6 +965,7 @@ mod tests {
             let info = mock_info("creator", &[]);
             let env = mock_env();
             let err = instantiate(deps.as_mut(), env, info, instantiate_msg).unwrap_err();
+            // asserting that instantiation failed due to the "Initial supply greater than cap" error
             assert_eq!(
                 err,
                 StdError::generic_err("Initial supply greater than cap").into()
@@ -992,23 +1050,23 @@ mod tests {
     fn can_mint_by_minter() {
         let mut deps = mock_dependencies();
 
-        let genesis = String::from("genesis");
-        let amount = Uint128::new(11223344);
-        let minter = String::from("asmodat");
-        let limit = Uint128::new(511223344);
+        let genesis: String  = String::from("genesis");
+        let amount : Uint128 = Uint128::new(11223344 );
+        let minter : String  = String::from("asmodat");
+        let limit  : Uint128 = Uint128::new(511223344);
         do_instantiate_with_minter(deps.as_mut(), &genesis, amount, &minter, Some(limit));
 
         // minter can mint coins to some winner
-        let winner = String::from("lucky");
-        let prize = Uint128::new(222_222_222);
+        let winner: String = String::from("lucky");
+        let prize : Uint128 = Uint128::new(222_222_222);
         let msg = ExecuteMsg::Mint {
             recipient: winner.clone(),
             amount: prize,
         };
 
-        let info = mock_info(minter.as_ref(), &[]);
-        let env = mock_env();
-        let res = execute(deps.as_mut(), env, info, msg).unwrap();
+        let info: MessageInfo = mock_info(minter.as_ref(), &[]);
+        let env : Env         = mock_env();
+        let res : Response    = execute(deps.as_mut(), env, info, msg).unwrap();
         assert_eq!(0, res.messages.len());
         assert_eq!(get_balance(deps.as_ref(), genesis), amount);
         assert_eq!(get_balance(deps.as_ref(), winner.clone()), prize);
@@ -1022,15 +1080,14 @@ mod tests {
         let env = mock_env();
         execute(deps.as_mut(), env, info, msg).unwrap();
 
-        // but if it exceeds cap (even over multiple rounds), it fails
-        // cap is enforced
+        // but if it exceeds cap (even over multiple rounds), it fails cap is enforced
         let msg = ExecuteMsg::Mint {
             recipient: winner,
             amount: Uint128::new(333_222_222),
         };
-        let info = mock_info(minter.as_ref(), &[]);
-        let env = mock_env();
-        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        let info: MessageInfo   = mock_info(minter.as_ref(), &[]);
+        let env : Env           = mock_env();
+        let err : ContractError = execute(deps.as_mut(), env, info, msg).unwrap_err();
         assert_eq!(err, ContractError::CannotExceedCap {});
     }
 
@@ -1227,7 +1284,8 @@ mod tests {
 
     #[test]
     fn queries_work() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+        let mut deps = mock_dependencies_with_balance(
+            &coins(2, "token"));
         let addr1 = String::from("addr0001");
         let amount1 = Uint128::from(12340000u128);
 
@@ -1264,7 +1322,8 @@ mod tests {
 
     #[test]
     fn transfer() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+        let mut deps = mock_dependencies_with_balance(
+            &coins(2, "token"));
         let addr1 = String::from("addr0001");
         let addr2 = String::from("addr0002");
         let amount1 = Uint128::from(12340000u128);
@@ -1323,7 +1382,8 @@ mod tests {
 
     #[test]
     fn burn() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+        let mut deps = mock_dependencies_with_balance(
+            &coins(2, "token"));
         let addr1 = String::from("addr0001");
         let amount1 = Uint128::from(12340000u128);
         let burn = Uint128::from(76543u128);
@@ -1371,7 +1431,8 @@ mod tests {
 
     #[test]
     fn send() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+        let mut deps = mock_dependencies_with_balance(
+            &coins(2, "token"));
         let addr1 = String::from("addr0001");
         let contract = String::from("addr0002");
         let amount1 = Uint128::from(12340000u128);
