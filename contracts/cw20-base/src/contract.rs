@@ -380,11 +380,11 @@ pub fn execute_burn(
 
 /// @viewer Execute mint message
 pub fn execute_mint(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    recipient: String,
-    amount: Uint128,
+    deps      : DepsMut,
+    _env      : Env,
+    info      : MessageInfo,
+    recipient : String,
+    amount    : Uint128,
 ) -> Result<Response, ContractError> {
 
     // token info includes all the primitives of ERC-20
@@ -432,7 +432,7 @@ pub fn execute_mint(
 }
 
 
-/// @viewer Execute send message
+/// @viewer Execute send - self-explanatory
 pub fn execute_send(
     deps     : DepsMut,
     _env     : Env,
@@ -444,6 +444,7 @@ pub fn execute_send(
     let rcpt_addr = deps.api.addr_validate(&contract)?;
 
     // move the tokens to the contract
+    // first we subtract from sender's balance
     BALANCES.update(
         deps.storage,
         &info.sender,
@@ -451,6 +452,7 @@ pub fn execute_send(
             Ok(balance.unwrap_or_default().checked_sub(amount)?)
         },
     )?;
+    // then we add to the recipient's balance
     BALANCES.update(
         deps.storage,
         &rcpt_addr,
@@ -459,6 +461,7 @@ pub fn execute_send(
         },
     )?;
 
+    // return appropriate response (including action, from, to, amount, and a message?)
     let res = Response::new()
         .add_attribute("action", "send")
         .add_attribute("from", &info.sender)
@@ -477,11 +480,12 @@ pub fn execute_send(
 
 
 pub fn execute_update_minter(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    new_minter: Option<String>,
+    deps       : DepsMut,
+    _env       : Env,
+    info       : MessageInfo,
+    new_minter : Option<String>,
 ) -> Result<Response, ContractError> {
+
     let mut config = TOKEN_INFO
         .may_load(deps.storage)?
         .ok_or(ContractError::Unauthorized {})?;
@@ -611,9 +615,9 @@ pub fn execute_upload_logo(
 /// between smart contracts and whatnot (not sure at all, though)
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(
-    deps: Deps,
-    _env: Env,
-    msg: QueryMsg
+    deps : Deps,
+    _env : Env,
+    msg  : QueryMsg
 ) -> StdResult<Binary> {
     // querying uses Serde's serialization (serializing a complex data structure, and whatnot) into
     // serializable sequence of bytes for efficient transmission
@@ -649,12 +653,7 @@ pub fn query(
             spender,
             start_after,
             limit,
-        } => to_binary(&query_spender_allowances(
-            deps,
-            spender,
-            start_after,
-            limit,
-        )?),
+        } => to_binary(&query_spender_allowances(deps, spender, start_after, limit,)?),
 
         // querying all accounts (???)
         QueryMsg::AllAccounts { 
@@ -671,9 +670,17 @@ pub fn query(
 }
 
 
+/// @viewer querying the balance of a specific address
+/// NOTE: it seems a bit odd that validating address does not actually check whether the address
+/// exists or not, but only whether it is in correct address format
+/// Nevertheless, you can still query an address' balance? It seems that the storage will store
+/// the address, even if not actually in existence (supposedly), anyway.
+/// So here, all it does is query the storage with may_load (which will return Option wrapped in
+/// StdResult), and we unwrap that.
 pub fn query_balance(deps: Deps, address: String) -> StdResult<BalanceResponse> {
     let address = deps.api.addr_validate(&address)?;
     let balance = BALANCES
+        // storage is indeed simply a map of address to Uint128
         .may_load(deps.storage, &address)?
         .unwrap_or_default();
     Ok(BalanceResponse { balance })
@@ -835,6 +842,52 @@ mod tests {
     }
 
     const PNG_HEADER: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+
+
+    /// USER TESTS
+    mod user_test {
+        use super::*;
+
+        #[test]
+        fn instantiate_test() {
+            let sender = "sender";
+
+            let mut deps = mock_dependencies();
+            let env = mock_env();
+            let info = mock_info(&sender, &[
+                cosmwasm_std::Coin {
+                    denom: String::from("NNV"),
+                    amount: Uint128::new(1092498)
+                }
+            ]);
+            let msg = InstantiateMsg {
+                name: "SomeCoin".to_string(),
+                symbol: "SCN".to_string(),
+                decimals: 10,
+                initial_balances: vec![
+                    Cw20Coin {
+                        address: sender.to_string(),
+                        amount: Uint128::new(23123)
+                    },
+                    Cw20Coin {
+                        address: "random guy".to_string(),
+                        amount: Uint128::new(312)
+                    }
+                ],
+                mint: Some(
+                    MinterResponse {
+                        minter: "random guy".to_string(),
+                        cap: Some(Uint128::new(312+23123))
+                    }
+                ),
+                marketing: None
+            };
+
+            let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
+            assert_eq!(0, res.messages.len());
+        }
+    }
+
 
     /// INSTANTIATE MODULE
     mod instantiate {
